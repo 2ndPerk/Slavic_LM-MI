@@ -1,0 +1,132 @@
+#imports also need to be here for some reason
+import pandas as pd
+from tqdm.notebook import tqdm
+import torch
+from scipy.optimize import linear_sum_assignment
+
+
+#Data
+def prep_data(source, words):
+    source = "test/"+source+".txt"
+    file = open(source, "r", encoding = 'utf-8')
+    lines = file.readlines()
+
+    data = [[],[],[],[]]
+    data_3line = [[],[],[],[]]
+    data_3line_unfilled = [[],[],[],[]]
+    for n in range(4):
+        for l in range(12):
+            line = lines[(12*n) + l]
+            if line != "\n":
+                data[n].append(line)
+
+                prev = lines[l-1].replace("{}", words[n][l-1]) if l > 0 else ""
+                next = lines[l+1].replace("{}", words[n][l+1]) if l < 11 else ""
+
+                data_3line[n].append(prev + line + next)
+
+                prev = lines[l-1].replace("{}", '_') if l > 0 else ""
+                next = lines[l+1].replace("{}", '_') if l < 11 else ""
+
+                data_3line_unfilled[n].append(prev + line + next)
+        
+    return [data, data_3line, data_3line_unfilled]
+
+def prep_words(source):
+    source = "test/"+source+"_Words.txt"
+    file = open(source, "r", encoding = 'utf-8')
+    lines = file.readlines()
+    
+    words = [[],[],[],[]]
+    for n in range(4):
+        for l in range(12):
+            line = lines[(n*12)+l]
+            words[n].append(line)
+            
+    return words
+
+def uni_predict(text, model, tokenizer):
+    # Tokenized input
+    # text = "[CLS] I got restricted because Tom reported my reply [SEP]"
+    text = text
+    tokenized_text = tokenizer.tokenize(text)
+    sentence_score = 0
+    indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
+    length = len(tokenized_text)
+    tokens_tensor = torch.tensor([indexed_tokens])
+    tokens_tensor = tokens_tensor.to('cuda')
+    #masked_tensor = torch.tensor([masked_index])
+    with torch.no_grad():
+        outputs = model(tokens_tensor, labels= tokens_tensor)
+    loss = outputs[0]
+    sentence_score = -loss
+    return sentence_score
+
+def greedy_select(df):
+    selected_positions = []
+    remaining_rows = set(df.index)
+    remaining_columns = set(df.columns)
+
+    while len(remaining_rows) > 0 and len(remaining_columns) > 0:
+        min_value = float('inf')
+        min_position = None
+
+        # Find the smallest value and its position
+        for row in remaining_rows:
+            for column in remaining_columns:
+                value = df.at[row, column]
+                if value < min_value:
+                    min_value = value
+                    min_position = (row, column)
+
+        # Remove the row and column
+        remaining_rows.remove(min_position[0])
+        remaining_columns.remove(min_position[1])
+
+        # Add the position to the selected list
+        selected_positions.append(min_position)
+
+    return sorted(selected_positions, key=lambda x: x[0])
+
+def score_model(model, tokenizer, data, opts): 
+    r_scores = []
+    df = pd.DataFrame()
+    t1_score = 0
+    t3_score = 0
+    for d in tqdm(data):
+        correct = opts[data.index(d)]
+        scores = {}
+        for o in opts:
+            sentence = d.replace("{}", o)
+            scores.update({o : float(uni_predict(sentence, model, tokenizer).item())})
+        df = df.append(scores, ignore_index=True)
+        scores = sorted(scores.items(), key=lambda x: x[1], reverse = True)
+        i = 0
+        for key, value in scores:
+            t1_score += ((i == 0) and (key == correct))
+            t3_score += ((i < 3) and (key == correct))
+            i += 1
+            
+    r_scores.append(t1_score/12)
+    r_scores.append(t3_score/12)
+    
+    #normalize each row
+    df = df.apply(lambda row: row / row.mean(), axis=1)
+    
+    #Hungarian Algorithm for linear sum assignment optimizes score over all selections
+    x,y = linear_sum_assignment(df)
+    out = pd.DataFrame({'Word': df.columns[y], 'Sentence': df.index[x]})
+    final_score = 0
+    for n in range(12):
+        final_score += (opts[n] == out.iloc[n]['Word'])
+    final_score = final_score/12
+    r_scores.append(final_score)
+    
+    #Greedy Selection tries to maximize high confidence picks instead of overall score
+    greedy_values = greedy_select(df)
+    final_score = 0
+    for n in range(12):
+        final_score += (opts[n] == greedy_values[n][1])
+    final_score = final_score/12
+    r_scores.append(final_score)
+    return r_scores
