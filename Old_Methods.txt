@@ -1,0 +1,49 @@
+def run_tests_printed(model, tokenizer):
+    langs = ["Polish","Czech","Slovak", "Croatian", "Slovene"]
+    for lang in tqdm(langs):
+        print(lang)
+        word_list = prep_words(lang)
+        data = prep_data(lang, word_list)
+        print("1 Line Data:")
+        scores_1_line = [0,0,0,0]
+        for i in range(4):
+            sc = score_model(model, tokenizer, data[0][i], word_list[i])
+            scores_1_line[0] += sc[0]
+            scores_1_line[1] += sc[1]
+            scores_1_line[2] += sc[2]
+            scores_1_line[3] += sc[3]
+        print("3 Line Data:")
+        scores_3_line = [0,0,0,0]
+        for i in range(4):
+            sc = score_model(model, tokenizer, data[1][i], word_list[i])
+            scores_3_line[0] += sc[0]
+            scores_3_line[1] += sc[1]
+            scores_3_line[2] += sc[2]
+            scores_3_line[3] += sc[3]
+        print()
+        print("3 Line Data (unfilled):")
+        scores_3u_line = [0,0,0,0]
+        for i in range(4):
+            sc = score_model(model, tokenizer, data[2][i], word_list[i])
+            scores_3u_line[0] += sc[0]
+            scores_3u_line[1] += sc[1]
+            scores_3u_line[2] += sc[2]
+            scores_3u_line[3] += sc[3]
+        print()
+        print("Final values for", lang)
+        print("1 line of input")
+        print("Top 1 Score:", scores_1_line[0]/4)
+        print("Top 3 Score:", scores_1_line[1]/4)
+        print("Forced Choiced Combinatorially Optimized Score:", scores_1_line[2]/4)
+        print("Forced Choiced Greedy Algorithm Score:", scores_1_line[3]/4)
+        print("3 lines of input")
+        print("Top 1 Score:", scores_3_line[0]/4)
+        print("Top 3 Score:", scores_3_line[1]/4)
+        print("Forced Choiced Combinatorially Optimized Score:", scores_3_line[2]/4)
+        print("Forced Choiced Greedy Algorithm Score:", scores_3_line[3]/4)
+        print("3 lines of input (no fill)")
+        print("Top 1 Score:", scores_3u_line[0]/4)
+        print("Top 3 Score:", scores_3u_line[1]/4)
+        print("Forced Choiced Combinatorially Optimized Score:", scores_3u_line[2]/4)
+        print("Forced Choiced Greedy Algorithm Score:", scores_3u_line[3]/4)
+        print()

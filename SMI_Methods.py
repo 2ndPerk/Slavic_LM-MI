@@ -3,6 +3,7 @@ import pandas as pd
 from tqdm.notebook import tqdm
 import torch
 from scipy.optimize import linear_sum_assignment
+from torch.nn import CrossEntropyLoss
 
 
 #Data
@@ -99,6 +100,84 @@ def score_model(model, tokenizer, data, opts):
         for o in opts:
             sentence = d.replace("{}", o)
             scores.update({o : float(uni_predict(sentence, model, tokenizer).item())})
+        df = df.append(scores, ignore_index=True)
+        scores = sorted(scores.items(), key=lambda x: x[1], reverse = True)
+        i = 0
+        for key, value in scores:
+            t1_score += ((i == 0) and (key == correct))
+            t3_score += ((i < 3) and (key == correct))
+            i += 1
+            
+    r_scores.append(t1_score/12)
+    r_scores.append(t3_score/12)
+    
+    #normalize each row
+    df = df.apply(lambda row: row / row.mean(), axis=1)
+    
+    #Hungarian Algorithm for linear sum assignment optimizes score over all selections
+    x,y = linear_sum_assignment(df)
+    out = pd.DataFrame({'Word': df.columns[y], 'Sentence': df.index[x]})
+    final_score = 0
+    for n in range(12):
+        final_score += (opts[n] == out.iloc[n]['Word'])
+    final_score = final_score/12
+    r_scores.append(final_score)
+    
+    #Greedy Selection tries to maximize high confidence picks instead of overall score
+    greedy_values = greedy_select(df)
+    final_score = 0
+    for n in range(12):
+        final_score += (opts[n] == greedy_values[n][1])
+    final_score = final_score/12
+    r_scores.append(final_score)
+    return r_scores
+
+
+
+#For BERT model testing
+def bert_predict(text, model, tokenizer):
+    # Tokenized input
+    # text = "[CLS] I got restricted because Tom reported my reply [SEP]"
+    text = "[CLS] " + text + " [SEP]" #special token for BERT, RoBERTa
+    tokenized_text = tokenizer.tokenize(text)
+    sentence_score = 0
+    length = len(tokenized_text)-2
+    for masked_index in range(1,len(tokenized_text)-1):
+        # Mask a token that we will try to predict back with `BertForMaskedLM`
+        masked_word = tokenized_text[masked_index]
+        #tokenized_text[masked_index] = '<mask>' #special token for XLNet
+        tokenized_text[masked_index] = '[MASK]' #special token for BERT, RoBerta
+        # Convert token to vocabulary indices
+        indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
+        index = torch.tensor(tokenizer.convert_tokens_to_ids(masked_word))
+        tokens_tensor = torch.tensor([indexed_tokens])
+        tokens_tensor = tokens_tensor.to('cuda')
+        index = index.to('cuda')
+        #masked_tensor = torch.tensor([masked_index])
+        with torch.no_grad():
+            outputs = model(tokens_tensor)
+        prediction_scores = outputs[0]
+        prediction_scores = prediction_scores.view(-1, model.config.vocab_size)
+        prediction_scores = prediction_scores[masked_index].unsqueeze(0)
+        loss_fct = CrossEntropyLoss(ignore_index=-1)  # -1 index = padding token
+        masked_lm_loss = loss_fct(prediction_scores, index.view(-1))
+        tokenized_text[masked_index] = masked_word
+        sentence_score -= masked_lm_loss.item()
+        tokenized_text[masked_index] = masked_word
+    sentence_score = sentence_score/length
+    return sentence_score
+
+def score_model_bert(model, tokenizer, data, opts): 
+    r_scores = []
+    df = pd.DataFrame()
+    t1_score = 0
+    t3_score = 0
+    for d in tqdm(data):
+        correct = opts[data.index(d)]
+        scores = {}
+        for o in opts:
+            sentence = d.replace("{}", o)
+            scores.update({o : bert_predict(sentence, model, tokenizer)})
         df = df.append(scores, ignore_index=True)
         scores = sorted(scores.items(), key=lambda x: x[1], reverse = True)
         i = 0
