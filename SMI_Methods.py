@@ -4,6 +4,7 @@ from tqdm.notebook import tqdm
 import torch
 from scipy.optimize import linear_sum_assignment
 from torch.nn import CrossEntropyLoss
+import numpy as np
 
 
 #Data
@@ -46,6 +47,7 @@ def prep_words(source):
             
     return words
 
+# source: https://github.com/XuhuiZhou/CATS
 def uni_predict(text, model, tokenizer):
     # Tokenized input
     # text = "[CLS] I got restricted because Tom reported my reply [SEP]"
@@ -89,9 +91,9 @@ def greedy_select(df):
 
     return sorted(selected_positions, key=lambda x: x[0])
 
-def score_model(model, tokenizer, data, opts): 
+def score_model(model, tokenizer, data, opts):
     r_scores = []
-    df = pd.DataFrame()
+    df_data = []
     t1_score = 0
     t3_score = 0
     for d in tqdm(data):
@@ -99,41 +101,36 @@ def score_model(model, tokenizer, data, opts):
         scores = {}
         for o in opts:
             sentence = d.replace("{}", o)
-            scores.update({o : float(uni_predict(sentence, model, tokenizer).item())})
-        df = df.append(scores, ignore_index=True)
-        scores = sorted(scores.items(), key=lambda x: x[1], reverse = True)
+            scores[o] = float(uni_predict(sentence, model, tokenizer).item())
+        df_data.append(scores)
+        scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         i = 0
         for key, value in scores:
             t1_score += ((i == 0) and (key == correct))
             t3_score += ((i < 3) and (key == correct))
             i += 1
-            
-    r_scores.append(t1_score/12)
-    r_scores.append(t3_score/12)
-    
-    #normalize each row
-    df = df.apply(lambda row: row / row.mean(), axis=1)
-    
-    #Hungarian Algorithm for linear sum assignment optimizes score over all selections
-    x,y = linear_sum_assignment(df)
+
+    df = pd.DataFrame(df_data)
+    r_scores.append(t1_score / 12)
+    r_scores.append(t3_score / 12)
+
+    # Normalize each row
+    df = df.div(df.mean(axis=1), axis=0)
+
+    # Hungarian Algorithm for linear sum assignment optimizes score over all selections
+    x, y = linear_sum_assignment(df)
     out = pd.DataFrame({'Word': df.columns[y], 'Sentence': df.index[x]})
-    final_score = 0
-    for n in range(12):
-        final_score += (opts[n] == out.iloc[n]['Word'])
-    final_score = final_score/12
+    final_score = sum(opts[n] == out.iloc[n]['Word'] for n in range(12)) / 12
     r_scores.append(final_score)
-    
-    #Greedy Selection tries to maximize high confidence picks instead of overall score
+
+    # Greedy Selection tries to maximize high confidence picks instead of overall score
     greedy_values = greedy_select(df)
-    final_score = 0
-    for n in range(12):
-        final_score += (opts[n] == greedy_values[n][1])
-    final_score = final_score/12
+    final_score = sum(opts[n] == greedy_values[n][1] for n in range(12)) / 12
     r_scores.append(final_score)
     return r_scores
 
 
-
+# source: https://github.com/XuhuiZhou/CATS
 #For BERT model testing
 def bert_predict(text, model, tokenizer):
     # Tokenized input
@@ -169,7 +166,7 @@ def bert_predict(text, model, tokenizer):
 
 def score_model_bert(model, tokenizer, data, opts): 
     r_scores = []
-    df = pd.DataFrame()
+    df_data = []
     t1_score = 0
     t3_score = 0
     for d in tqdm(data):
@@ -177,35 +174,30 @@ def score_model_bert(model, tokenizer, data, opts):
         scores = {}
         for o in opts:
             sentence = d.replace("{}", o)
-            scores.update({o : bert_predict(sentence, model, tokenizer)})
-        df = df.append(scores, ignore_index=True)
-        scores = sorted(scores.items(), key=lambda x: x[1], reverse = True)
+            scores[o] = bert_predict(sentence, model, tokenizer)
+        df_data.append(scores)
+        scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         i = 0
         for key, value in scores:
             t1_score += ((i == 0) and (key == correct))
             t3_score += ((i < 3) and (key == correct))
             i += 1
             
+    df = pd.DataFrame(df_data)
     r_scores.append(t1_score/12)
     r_scores.append(t3_score/12)
     
     #normalize each row
-    df = df.apply(lambda row: row / row.mean(), axis=1)
+    df = df.div(df.mean(axis=1), axis=0)
     
     #Hungarian Algorithm for linear sum assignment optimizes score over all selections
-    x,y = linear_sum_assignment(df)
+    x, y = linear_sum_assignment(df)
     out = pd.DataFrame({'Word': df.columns[y], 'Sentence': df.index[x]})
-    final_score = 0
-    for n in range(12):
-        final_score += (opts[n] == out.iloc[n]['Word'])
-    final_score = final_score/12
+    final_score = sum(opts[n] == out.iloc[n]['Word'] for n in range(12)) / 12
     r_scores.append(final_score)
     
     #Greedy Selection tries to maximize high confidence picks instead of overall score
     greedy_values = greedy_select(df)
-    final_score = 0
-    for n in range(12):
-        final_score += (opts[n] == greedy_values[n][1])
-    final_score = final_score/12
+    final_score = sum(opts[n] == greedy_values[n][1] for n in range(12)) / 12
     r_scores.append(final_score)
     return r_scores
