@@ -1,0 +1,17 @@
+GPT - Not enough
+Big
+    Milos/slovak-gpt-j-1.4B  (P:1.4B, S:2.38GB)
+    sdadas/polish-gpt2-xl    (P:1.7B, S:6.35GB)
+Mid
+    jonasknobloch/czechGPT   (S:1.5GB)
+    
+Small (~500MB .bin)
+    macedonizer/sl-gpt2
+    macedonizer/hr-gpt2
+    Milos/slovak-gpt-j-162  ?(Milos/slovak-gpt-j-405M)
+    sdadas/polish-gpt2-small
+    spital/gpt2-small-czech-cs
+          
+
+BERT - these just suck, lots of 0%
+EMBEDDIA/sloberta
